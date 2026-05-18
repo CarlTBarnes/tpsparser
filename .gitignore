@@ -1,0 +1,35 @@
+# Clarion build outputs
+/obj/
+/map/
+*.obj
+*.o
+*.lib
+*.dll
+*.exe
+*.exp
+*.pdb
+*.ilk
+*.map
+*.rsc
+*.res
+
+# Clarion/IDE generated caches and user files
+*.sln.cache
+*.cwproj.user
+*.user
+*.suo
+*.tmp
+*.bak
+*.~*
+*.log
+
+# Generated/intermediate folders
+/bin/
+/debug/
+/release/
+
+# OS/editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
