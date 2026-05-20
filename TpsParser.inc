@@ -186,6 +186,10 @@ ModLong               PROCEDURE(LONG pValue,LONG pDivisor),LONG,PRIVATE
 Slice                 PROCEDURE(*STRING pData,LONG pPos,LONG pLen),STRING,PRIVATE
 TpsDateToClarion      PROCEDURE(LONG pValue),LONG,PRIVATE
 TpsTimeToClarion      PROCEDURE(LONG pValue),LONG,PRIVATE
+
+DebugClassWindow      PROCEDURE()   !View the Class Queues and Variables to understand the class
+DebugStringWindow     PROCEDURE( STRING StrValue, <STRING CapTxt>) !View a String in a Window in Hex or ASCII 
+DebugStringWindow     PROCEDURE(*STRING StrValue, <STRING CapTxt>)
                     END
 
 ! GetErrorCode equates

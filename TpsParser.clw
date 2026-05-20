@@ -18,10 +18,14 @@
 
   MEMBER
 
-  MAP
+  MAP                                          
+Debug_HexDump  PROCEDURE( STRING pStr),*STRING,PRIVATE
+Debug_HexDump  PROCEDURE(*STRING pStr),*STRING,PRIVATE  
   END
 
+!  INCLUDE('KeyCodes.clw'),ONCE     will error on pKey in 4 prototypes
   INCLUDE('TpsParser.inc'),ONCE
+  PRAGMA('link(C%V%DOS%X%%L%.LIB)')     !DOS Driver required, this way the Project does not need to add it
 
 TpsStringMax        EQUATE(1024)
 TpsMemoStringMax    EQUATE(8192)
@@ -1795,3 +1799,220 @@ M                                 LONG
   M = BSHIFT(BAND(pValue,00FF0000H),-16)
   H = BSHIFT(BAND(pValue,7F000000H),-24)
   RETURN (H * 60 * 60 * 100) + (M * 60 * 100) + 1
+!============================================================
+TpsParserType.DebugClassWindow      PROCEDURE()   !View the data and queues inside the class
+Table4FieldQ  QUEUE,PRE(Tbl4FldQ)      !From .TableNameQ   &TpsTableNameQueue
+NameAndNo        STRING(140)           !Tbl4FldQ:NameAndNo   (128+12)
+TableNo          LONG                  !Tbl4FldQ:TableNo
+              END
+idxTable      LONG,AUTO 
+SrcViewPos  LONG(1)
+SrcViewLen  LONG(8192)             
+SrcViewEnd  LONG,AUTO
+Window WINDOW('TpsParser Debug Class Window'),AT(,,453,200),CENTER,GRAY,SYSTEM,MAX,FONT('Consolas',9), |
+            RESIZE
+        SHEET,AT(1,1),FULL,USE(?SHEET1),JOIN,NOSHEET,BELOW
+            TAB('DataQ'),USE(?TAB:DataQ)
+                LIST,AT(5,19),FULL,USE(?LIST:DataQ),VSCROLL,FROM(SELF.DataQ),FORMAT('34R(2)|M~TableN' & |
+                        'o~C(0)@n_5@43R(2)|M~RecordNo~C(0)@n8@54R(2)|M~Payload Len~C(0)@n12@200L(2)|M' & |
+                        '~Payload (32768 max) Double-Click for Hex~@s255@')
+            END
+            TAB('MemoQ'),USE(?TAB:MemoQ)
+                LIST,AT(5,19),FULL,USE(?LIST:MemoQ),VSCROLL,FROM(SELF.MemoQ),FORMAT('35R(2)|M~TableN' & |
+                        'o~C(0)@n_5@35R(2)|M~Owner~C(0)@-6@39R(2)|M~MemoIndex~C(0)@n-8@35R(2)|M~Seque' & |
+                        'nce~C(0)@n-8@35R(2)|M~Data Len~C(0)@n12@200L(2)|M~Payload~@s255@')
+            END
+            TAB('TableDefQ'),USE(?TAB:TableDefQ)
+                LIST,AT(5,19),FULL,USE(?LIST:TableDefQ),VSCROLL,FROM(SELF.TableDefQ),FORMAT('35R(2)|' & |
+                        'M~TableNo~C(0)@n_5@35R(2)|M~BlockNo~C(0)@n-10@35R(2)|M~DataLen~C(0)@n12@200L' & |
+                        '(2)|M~Payload~L(2)@s255@')
+            END
+            TAB('TableNameQ'),USE(?TAB:TableNameQ)
+                LIST,AT(5,19),FULL,USE(?LIST:TableNameQ),VSCROLL,FROM(SELF.TableNameQ), |
+                        FORMAT('35R(2)|M~TableNo~C(0)@n_5@200L(2)|M~Name~L(2)@s128@')
+            END
+            TAB('FieldQ'),USE(?TAB:FieldQ)
+                PROMPT('Fields for Table:'),AT(5,19,,11),USE(?LIST:Table4FieldQ:Prompt)
+                LIST,AT(77,19,183,11),USE(?LIST:Table4FieldQ),VSCROLL,DROP(15),FROM(Table4FieldQ), |
+                        FORMAT('200L(2)')
+                LIST,AT(5,35),FULL,USE(?LIST:FieldQ),VSCROLL,FROM(SELF.FieldQ),FORMAT('24R(2)|M~Tabl' & |
+                        'e<0Dh,0Ah>No~C(0)@n3@100L(2)|M~Field Name~@s128@63L(2)|M~Short Name~@s128@[' & |
+                        '18R(2)|M~No.~C(0)@n-4@40L(2)|M~Name~@s32@]|~Field Type~30R(2)|M~Offset~C(0)' & |
+                        '@n7@30R(2)|M~Length~C(0)@n7@21R(2)|M~DIM~C(0)@n6b@Q''Array Elements''[20R(2' & |
+                        ')|M~Digs~C(0)@n3b@Q''BcdDigitsAfterDecimal''20R(2)|M~Len~C(0)@n3b@Q''BcdLen' & |
+                        'gthOfElement'']|~Decimal~20R(2)|M~Is<0Dh,0Ah>Memo~C(0)@n3b@20R(2)|M~Is<0Dh>' & |
+                        '<0Ah>Blob~C(0)@n3b@35L(2)~Memo<0Dh,0Ah>Index~C(0)@n-4b@')
+            END
+            TAB('Other'),USE(?Tab:Other)
+                PROMPT('.Src member is the file loaded into memory'),AT(199,28),USE(?SrcFYI)
+                PROMPT('.SrcLen:'),AT(199,43),USE(?SelfSrcLen:prompt)
+                ENTRY(@n11),AT(236,43),USE(SELF.SrcLen),SKIP,COLOR(COLOR:BTNFACE),READONLY
+                BUTTON('View .Src'),AT(10,29,,27),USE(?ViewSrcBtn)
+                PROMPT('View Position:'),AT(69,30),USE(?SrcViewPos:Prompt)
+                ENTRY(@n11),AT(130,29),USE(SrcViewPos),RIGHT
+                PROMPT('View Length:'),AT(77,43),USE(?SrcViewLen:Prompt)
+                ENTRY(@n11),AT(130,43),USE(SrcViewLen),RIGHT
+                PROMPT('TPS Header is in 1-512.<0Dh,0Ah>Data starts at 513.<0Dh,0Ah>Block Start=32 E' & |
+                        'nd=272 +512'),AT(10,64,,30),USE(?SrcFYIPoz)
+            END
+        END
+    END
+P LONG,DIM(4),STATIC
+    MAP
+DOO_ListQonTab      PROCEDURE(LONG TabFEQ, LONG ListFEQ,*QUEUE QRef)
+DOO_ListLineView    PROCEDURE(*QUEUE ListQueRef, *LONG Q:DataLenLong, *STRING Q:DataString)
+    END 
+    CODE
+    SYSTEM{PROP:PropVScroll}=1
+    OPEN(Window)
+    IF P[4] THEN SETPOSITION(0,P[1],P[2],P[3],P[4]).
+    0{PROP:Text}=0{PROP:text} &' - File Name?' !& SELF.
+    DOO_ListQonTab(?TAB:DataQ, ?LIST:DataQ, SELF.DataQ)
+    DOO_ListQonTab(?TAB:MemoQ, ?LIST:MemoQ, SELF.MemoQ)
+    DOO_ListQonTab(?TAB:TableDefQ, ?LIST:TableDefQ, SELF.TableDefQ)
+    DOO_ListQonTab(?TAB:TableNameQ, ?LIST:TableNameQ, SELF.TableNameQ)
+    DOO_ListQonTab(?TAB:FieldQ, ?LIST:FieldQ, SELF.FieldQ)
+    LOOP idxTable = 1 TO RECORDS(SELF.TableNameQ)
+         GET(SELF.TableNameQ,idxTable)
+         Tbl4FldQ:TableNo   = SELF.TableNameQ.TableNo
+         Tbl4FldQ:NameAndNo = CLIP(SELF.TableNameQ.Name) &' ('& Tbl4FldQ:TableNo &')'
+         ADD(Table4FieldQ,Tbl4FldQ:TableNo)
+         IF Tbl4FldQ:TableNo = SELF.CurrentTable THEN 
+            ?LIST:Table4FieldQ{PROP:Selected} = POINTER(Table4FieldQ)
+         END 
+    END     
+    ACCEPT 
+        CASE EVENT()
+        OF EVENT:NewSelection   !Double click on some lines shows  the HEX
+            CASE FIELD()
+            OF ?LIST:DataQ     ; DOO_ListLineView(SELF.DataQ,     SELF.DataQ.PayloadLen,  SELF.DataQ.Payload) 
+            OF ?LIST:MemoQ     ; DOO_ListLineView(SELF.MemoQ,     SELF.MemoQ.DataLen,     SELF.MemoQ.Payload) 
+            OF ?LIST:TableDefQ ; DOO_ListLineView(SELF.TableDefQ, SELF.TableDefQ.DataLen, SELF.TableDefQ.Payload) 
+            END 
+        END
+        CASE ACCEPTED()
+        OF ?LIST:Table4FieldQ
+            GET(Table4FieldQ,CHOICE(?LIST:Table4FieldQ))
+            SELF.SetTable(POINTER(Table4FieldQ))    !This call takes the 1,2,3 Table Index not the TableNo :( should allow TableNo also
+            ?TAB:FieldQ{PROP:Text} = 'FieldQ ('& RECORDS(SELF.FieldQ) &')'
+        OF ?ViewSrcBtn 
+           IF SELF.SrcLen=0 THEN CYCLE.
+           IF SrcViewPos < 1 THEN SrcViewPos=1.
+           IF SrcViewPos > SELF.SrcLen-63 THEN SrcViewPos=SELF.SrcLen-63.
+           IF SrcViewLen > 8192 THEN SrcViewLen=8192.   !Reasonable for Hex viewer
+           SrcViewEnd = SrcViewPos + SrcViewLen - 1
+           IF SrcViewEnd > SELF.SrcLen THEN 
+              SrcViewEnd = SELF.SrcLen
+              SrcViewLen = SrcViewEnd - SrcViewPos + 1
+           END
+           DISPLAY
+           SELF.DebugStringWindow(SELF.Src[ SrcViewPos : SrcViewEnd ], 'Src ['& SrcViewPos &' : '& SrcViewEnd &']')
+        END
+    END
+    GETPOSITION(0,P[1],P[2],P[3],P[4]) 
+    CLOSE(Window)
+    RETURN
+DOO_ListQonTab  PROCEDURE(LONG TabFEQ, LONG ListFEQ,*QUEUE QRef)
+    CODE
+    TabFEQ{PROP:Text} = TabFEQ{PROP:Text} & ' ('& RECORDS(QRef) &')'
+    ListFEQ{PROP:PropVScroll}=1
+    RETURN 
+
+DOO_ListLineView PROCEDURE(*QUEUE ListQueRef, *LONG Q:DataLenLong, *STRING Q:DataString)
+ListFEQ LONG,AUTO
+MyMouseLeft2   EQUATE(0005H)  !Left mouse double-click 
+    CODE
+    IF KEYCODE()<>MyMouseLeft2 THEN RETURN.
+    ListFEQ=FIELD()
+    GET(ListQueRef,CHOICE(ListFEQ)) ; IF ERRORCODE() THEN RETURN .
+    IF Q:DataLenLong = 0 THEN RETURN.
+    SELF.DebugStringWindow(Q:DataString[ 1 : Q:DataLenLong])
+    RETURN
+!--------------------------------------------------------
+TpsParserType.DebugStringWindow PROCEDURE(STRING StrValue, <STRING CapTxt>)
+  CODE
+  SELF.DebugStringWindow(StrValue,CHOOSE(~OMITTED(CapTxt) AND CapTxt,CapTxt,'String Value'))
+
+TpsParserType.DebugStringWindow PROCEDURE(*STRING StrValue, <STRING CapTxt>)  
+LenTxt     LONG,AUTO
+HexTxt     &String
+ShowHex    BYTE(1),STATIC
+HScrollTxt BYTE(1),STATIC
+VScrollTxt BYTE(1),STATIC
+Window WINDOW('S'),AT(,,310,170),GRAY,SYSTEM,MAX,FONT('Consolas',10),RESIZE ,center
+        TOOLBAR,AT(0,0,325),USE(?TB1)
+            CHECK('Show HEX'),AT(2,0),USE(ShowHex),TIP('See Value in Hex')
+            CHECK('HScroll'),AT(74,0),USE(HScrollTxt)
+            CHECK('VScroll'),AT(126,0),USE(VScrollTxt)
+        END
+        TEXT,AT(0,2),FULL,USE(?Txt),HVSCROLL,READONLY,FLAT
+        TEXT,AT(0,2),FULL,USE(?HexTxt),HIDE,HVSCROLL,READONLY,FLAT
+    END
+P LONG,DIM(4),STATIC
+  CODE
+  LenTxt=SIZE(StrValue) 
+  IF ~LenTxt THEN Message('No Text','StringView') ; RETURN.
+  OPEN(Window)
+  IF P[4] THEN SETPOSITION(0,P[1],P[2],P[3],P[4]).
+  ?Txt{PROP:HScroll}=HScrollTxt ; ?Txt{PROP:VScroll}=VScrollTxt
+  IF LenTxt > 0FFF0h THEN DISABLE(?HScrollTxt,?VScrollTxt). !System Error @ 64k in 11.13505 - Message('Risk GPF?',LenTxt,,'No|Risk')
+  ?Txt{PROP:Use}=StrValue   !pSt.valuePtr[1 : LenTxt]
+  0{PROP:Text}=CHOOSE(~OMITTED(CapTxt) AND CapTxt,CLIP(CapTxt),'String Value') & ' - Length ' & LenTxt
+  IF ShowHex THEN POST(EVENT:Accepted,?ShowHex).
+  ACCEPT
+    CASE ACCEPTED()
+    OF ?HScrollTxt ; ?Txt{PROP:HScroll}=HScrollTxt
+    OF ?VScrollTxt ; ?Txt{PROP:VScroll}=VScrollTxt
+    OF ?ShowHex
+        IF HexTxt &= NULL THEN 
+           HexTxt &= Debug_HexDump(StrValue) 
+           ?HexTxt{PROP:Use}=HexTxt
+        END
+        ?Txt{PROP:Hide}=ShowHex ; ?HexTxt{PROP:Hide}=1-ShowHex
+    END
+  END
+  GETPOSITION(0,P[1],P[2],P[3],P[4]) 
+  CLOSE(Window)
+  DISPOSE(HexTxt) 
+  RETURN
+
+!--------------------------------------------------------
+Debug_HexDump  PROCEDURE(STRING pStr)!,*STRING  ,PRIVATE
+    CODE
+    RETURN Debug_HexDump(pStr)
+!-------------------------------
+Debug_HexDump  PROCEDURE(*STRING pStr)!,*STRING  ,PRIVATE
+Dump &STRING
+DmpX LONG,AUTO     
+Lin Group,PRE()
+      String('<13,10>')
+Off   String('Offset ') 
+Hex   String(' 1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16  ') 
+AHex    String(3),DIM(16),OVER(Hex) 
+Chr   String('0123456789abcdef')
+    End
+SizeLin BYTE,AUTO    
+SizeStr LONG,AUTO    
+VC BYTE,AUTO
+p LONG,AUTO     
+c BYTE,AUTO
+XDigits STRING('0123456789ABCDEF')
+    CODE 
+    SizeStr=SIZE(pStr)
+    SizeLin=SIZE(Lin) 
+    Dump &=NEW(STRING((2+int(SizeStr / 16))*SizeLin ))
+    Dump[ 1: SizeLin]=SUB(Lin,3,99) ; DmpX = SizeLin - 1 
+    LOOP P = 0 TO SizeStr-1 BY 16
+       Off=P  
+       Hex='' ; Chr='' 
+       LOOP c = 1 TO 16
+         IF p+c > SizeStr THEN BREAK.
+         VC=VAL(pStr[p+c])
+         IF VC >= 32 THEN Chr[c]=CHR(VC) ELSE Chr[c] = '.'.  
+         AHex[c,1]=XDigits[BSHIFT(VC, -4) + 1] 
+         AHex[c,2]=XDigits[BAND(VC, 0FH) + 1]
+       END
+       Dump[DmpX : DmpX+SizeLin-1]=Lin
+       DmpX += SizeLin 
+    END
+    RETURN Dump    
